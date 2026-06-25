@@ -1,0 +1,19 @@
+# Python
+venv/
+backend/venv/
+__pycache__/
+*.pyc
+
+# Environment
+.env
+credentials.json
+backend/credentials.json
+
+# Node
+node_modules/
+
+# Next.js
+.next/
+
+# VS Code
+.vscode/
