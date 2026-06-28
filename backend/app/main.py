@@ -6,6 +6,7 @@ from app.api.rag import router as rag_router
 from app.api.emails import router as email_router
 from app.api.gmail import router as gmail_router
 from app.api.agents import router as agent_router
+from app.api.router import router as router_api
 
 
 
@@ -19,6 +20,7 @@ app.include_router(email_router)
 app.include_router(gmail_router)
 app.include_router(agent_router)
 app.include_router(rag_router)
+app.include_router(router_api)
 
 
 @app.get("/")

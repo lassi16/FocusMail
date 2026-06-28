@@ -10,6 +10,26 @@ from app.agents.action_agent import extract_action
 
 router = APIRouter()
 
+# temporary
+from app.agents.event_agent import extract_events
+
+@router.get("/test-events")
+def test_events():
+
+    return extract_events(
+
+        "Google Summer Internship",
+
+        """
+Applications close on 30 June.
+
+Interview on 5 July at 11 AM.
+
+Orientation on 10 July.
+"""
+    )
+
+
 
 @router.get("/categorize")
 def categorize_emails(

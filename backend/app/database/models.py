@@ -1,20 +1,30 @@
-from sqlalchemy import BigInteger, Column, DateTime, Integer, String, Text
-from sqlalchemy.orm import declarative_base
-from sqlalchemy import Column, Integer, String, Text, DateTime, BigInteger
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    Text,
+    DateTime,
+    BigInteger,
+    Date,
+    ForeignKey
+)
 
-Base = declarative_base()
+from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
+
+from app.database.db import Base
 
 
 class Email(Base):
     __tablename__ = "emails"
 
-    id = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True, index=True)
 
-    gmail_id = Column(String, unique=True)
+    gmail_id = Column(String, unique=True, index=True)
 
     sender = Column(String)
 
-    subject = Column(String)
+    subject = Column(Text)
 
     body = Column(Text)
 
@@ -22,10 +32,67 @@ class Email(Base):
 
     priority = Column(String)
 
-    action_item = Column(Text, nullable=True)
+    # Temporary (will be removed after migration)
+    action_item = Column(Text)
 
-    deadline = Column(String, nullable=True)
+    # Temporary (will be removed after migration)
+    deadline = Column(String)
 
-    received_at = Column(DateTime, nullable=True)
+    gmail_internal_date = Column(BigInteger)
 
-    gmail_internal_date = Column(BigInteger, nullable=True)
+    received_at = Column(DateTime(timezone=True))
+
+    # One Email -> Many Events
+    events = relationship(
+        "EmailEvent",
+        back_populates="email",
+        cascade="all, delete-orphan"
+    )
+
+
+class EmailEvent(Base):
+    __tablename__ = "email_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    email_id = Column(
+        Integer,
+        ForeignKey("emails.id", ondelete="CASCADE"),
+        nullable=False
+    )
+
+    # meeting, assignment, interview,
+    # application_deadline, bill, exam, etc.
+    event_type = Column(String(100), nullable=False)
+
+    # Short title
+    title = Column(Text)
+
+    # Optional detailed description
+    description = Column(Text)
+
+    # Date of the event
+    event_date = Column(Date)
+
+    # Time (optional)
+    event_time = Column(String(50))
+
+    # High / Medium / Low
+    priority = Column(String(20))
+
+    # pending / completed / cancelled
+    status = Column(
+        String(20),
+        default="pending"
+    )
+
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now()
+    )
+
+    # Many Events -> One Email
+    email = relationship(
+        "Email",
+        back_populates="events"
+    )

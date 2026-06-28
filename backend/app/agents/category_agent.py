@@ -34,4 +34,20 @@ def categorize_email(subject, body):
         ]
     )
 
-    return response.choices[0].message.content.strip()
+    category = response.choices[0].message.content.strip()
+
+    VALID_CATEGORIES = [
+        "Internship",
+        "Placement",
+        "College",
+        "Meeting",
+        "Finance",
+        "Personal",
+        "Promotion",
+        "Spam"
+    ]
+
+    if category not in VALID_CATEGORIES:
+        category = "Personal"
+
+    return category

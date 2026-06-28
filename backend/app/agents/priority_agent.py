@@ -53,4 +53,11 @@ def get_priority(subject, body):
         ]
     )
 
-    return response.choices[0].message.content.strip()
+    priority = response.choices[0].message.content.strip()
+
+    priority = priority.capitalize()
+
+    if priority not in ["High", "Medium", "Low"]:
+        priority = "Medium"
+
+    return priority
