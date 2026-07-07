@@ -1,13 +1,14 @@
 import base64
 from datetime import datetime
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database.db import get_db
-from app.database.models import Email
+from app.database.models import Email, UserEmail, User
 
-from app.services.gmail.gmail_auth import get_gmail_service
+from app.api.auth import get_current_user
+from app.services.gmail.gmail_auth import get_gmail_service_for_tokens
 from app.services.email_processor import process_email
 
 router = APIRouter()
@@ -65,9 +66,20 @@ def extract_body(payload):
 # Gmail Test
 # ----------------------------------------------------
 @router.get("/gmail/test")
-def gmail_test():
+def gmail_test(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    user_email = db.query(UserEmail).filter(
+        UserEmail.user_id == current_user.id,
+        UserEmail.provider == "gmail",
+        UserEmail.is_connected == True,
+    ).first()
 
-    service = get_gmail_service()
+    if not user_email or not (user_email.access_token or user_email.refresh_token):
+        raise HTTPException(
+            status_code=404,
+            detail="Gmail account not connected. Please sign in with Google first.",
+        )
+
+    service = get_gmail_service_for_tokens(user_email.access_token, user_email.refresh_token)
 
     results = service.users().messages().list(
         userId="me",
@@ -126,9 +138,21 @@ def gmail_test():
 # Gmail Sync
 # ----------------------------------------------------
 @router.get("/gmail/sync")
-def sync_gmail(db: Session = Depends(get_db)):
+def sync_gmail(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
 
-    service = get_gmail_service()
+    user_email = db.query(UserEmail).filter(
+        UserEmail.user_id == current_user.id,
+        UserEmail.provider == "gmail",
+        UserEmail.is_connected == True,
+    ).first()
+
+    if not user_email or not (user_email.access_token or user_email.refresh_token):
+        raise HTTPException(
+            status_code=404,
+            detail="Gmail account not connected. Please sign in with Google first.",
+        )
+
+    service = get_gmail_service_for_tokens(user_email.access_token, user_email.refresh_token)
 
     results = service.users().messages().list(
         userId="me",

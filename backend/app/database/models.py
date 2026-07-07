@@ -6,7 +6,8 @@ from sqlalchemy import (
     DateTime,
     BigInteger,
     Date,
-    ForeignKey
+    ForeignKey,
+    Boolean
 )
 
 from sqlalchemy.orm import relationship
@@ -15,10 +16,98 @@ from sqlalchemy.sql import func
 from app.database.db import Base
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    
+    email = Column(String, unique=True, index=True, nullable=False)
+    
+    password_hash = Column(String, nullable=False)
+    
+    first_name = Column(String, nullable=True)
+    
+    last_name = Column(String, nullable=True)
+    
+    is_active = Column(Boolean, default=True)
+    
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now()
+    )
+    
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now()
+    )
+    
+    # One User -> Many UserEmails
+    user_emails = relationship(
+        "UserEmail",
+        back_populates="user",
+        cascade="all, delete-orphan"
+    )
+    
+    # One User -> Many Emails
+    emails = relationship(
+        "Email",
+        back_populates="user",
+        cascade="all, delete-orphan"
+    )
+
+
+class UserEmail(Base):
+    __tablename__ = "user_emails"
+
+    id = Column(Integer, primary_key=True, index=True)
+    
+    user_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+    
+    email = Column(String, nullable=False, index=True)
+    
+    provider = Column(String, nullable=False)  # "gmail", "outlook", etc.
+    
+    refresh_token = Column(Text, nullable=True)
+    
+    access_token = Column(Text, nullable=True)
+    
+    is_connected = Column(Boolean, default=False)
+    
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now()
+    )
+    
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now()
+    )
+    
+    # Many UserEmails -> One User
+    user = relationship(
+        "User",
+        back_populates="user_emails"
+    )
+
+
 class Email(Base):
     __tablename__ = "emails"
 
     id = Column(Integer, primary_key=True, index=True)
+    
+    user_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True
+    )
 
     gmail_id = Column(String, unique=True, index=True)
 
@@ -47,6 +136,12 @@ class Email(Base):
         "EmailEvent",
         back_populates="email",
         cascade="all, delete-orphan"
+    )
+    
+    # Many Emails -> One User
+    user = relationship(
+        "User",
+        back_populates="emails"
     )
 
 
