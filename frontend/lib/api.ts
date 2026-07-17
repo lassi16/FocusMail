@@ -16,13 +16,13 @@ function getApiBase(): string {
 
 async function fetchApi<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
-  
+
   // Get token from localStorage if available
   let headers: HeadersInit = {
     "Content-Type": "application/json",
     ...init?.headers,
   };
-  
+
   if (typeof window !== 'undefined') {
     const token = localStorage.getItem('auth_token');
     if (token) {
@@ -39,31 +39,15 @@ async function fetchApi<T>(path: string, init?: RequestInit): Promise<T> {
       headers,
       cache: "no-store",
     });
-  } catch (networkErr) {
-    const detail = networkErr instanceof Error ? networkErr.message : String(networkErr);
+  } catch {
     throw new Error(
-      `Cannot reach the backend (${detail}). Make sure uvicorn is running at ${getApiBase()}.`
+      "Cannot reach the backend. Start it with: uvicorn app.main:app --reload (from the backend folder)."
     );
   }
 
   if (!response.ok) {
-    // If the JWT is expired/invalid, clear local session and redirect to login
-    if (response.status === 401 && typeof window !== "undefined") {
-      localStorage.removeItem("auth_token");
-      localStorage.removeItem("user");
-      window.location.href = "/auth";
-      throw new Error("Session expired. Please log in again.");
-    }
-
-    let message = `Request failed: ${response.status} ${response.statusText}`;
-    try {
-      const body = await response.json();
-      if (body?.detail) message = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
-    } catch {
-      const text = await response.text().catch(() => "");
-      if (text) message = text;
-    }
-    throw new Error(message);
+    const message = await response.text();
+    throw new Error(message || `Request failed: ${response.status}`);
   }
 
   return response.json();

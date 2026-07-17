@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -12,14 +13,29 @@ SCOPES = [
     "email",
     "profile",
     "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.send",
 ]
 
 CREDENTIALS_PATH = Path(__file__).resolve().parents[3] / "credentials.json"
 
 
+def _load_client_config() -> dict:
+    """
+    Load Google OAuth client config.
+    Production: from GOOGLE_CREDENTIALS_JSON environment variable.
+    Local dev:  from credentials.json file on disk.
+    """
+    raw = os.getenv("GOOGLE_CREDENTIALS_JSON")
+    if raw:
+        return json.loads(raw)
+    with open(str(CREDENTIALS_PATH), "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
 def get_gmail_service():
-    flow = InstalledAppFlow.from_client_secrets_file(
-        CREDENTIALS_PATH,
+    client_config = _load_client_config()
+    flow = InstalledAppFlow.from_client_config(
+        client_config,
         SCOPES,
     )
 
@@ -31,8 +47,7 @@ def get_gmail_service_for_tokens(
     access_token: Optional[str],
     refresh_token: Optional[str],
 ):
-    with open(CREDENTIALS_PATH, "r", encoding="utf-8") as f:
-        client_config = json.load(f)["web"]
+    client_config = _load_client_config()["web"]
 
     creds = Credentials(
         token=access_token,

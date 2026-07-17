@@ -1,314 +1,65 @@
 "use client";
 
-import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { api } from "@/lib/api";
-import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
-
-type AuthMode = "login" | "register";
 
 export default function AuthPage() {
-  const router = useRouter();
-  const [mode, setMode] = useState<AuthMode>("login");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
-
-  // Form state
-  const [formData, setFormData] = useState({
-    email: "",
-    password: "",
-    confirmPassword: "",
-    firstName: "",
-    lastName: "",
-  });
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-  };
-
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setError(null);
-    setSuccess(null);
-    setLoading(true);
-
-    try {
-      if (mode === "login") {
-        // Login
-        if (!formData.email || !formData.password) {
-          throw new Error("Email and password are required");
-        }
-
-        const response = await api.auth.login(formData.email, formData.password);
-        
-        // Store token and user info
-        localStorage.setItem("auth_token", response.access_token);
-        localStorage.setItem("user", JSON.stringify(response.user));
-        
-        setSuccess("Login successful! Redirecting...");
-        setTimeout(() => {
-          router.push("/dashboard");
-        }, 1000);
-      } else {
-        // Register
-        if (!formData.email || !formData.password || !formData.confirmPassword) {
-          throw new Error("Email, password, and confirm password are required");
-        }
-
-        if (formData.password !== formData.confirmPassword) {
-          throw new Error("Passwords do not match");
-        }
-
-        if (formData.password.length < 6) {
-          throw new Error("Password must be at least 6 characters");
-        }
-
-        const response = await api.auth.register(
-          formData.email,
-          formData.password,
-          formData.firstName,
-          formData.lastName
-        );
-        
-        // Store token and user info
-        localStorage.setItem("auth_token", response.access_token);
-        localStorage.setItem("user", JSON.stringify(response.user));
-        
-        setSuccess("Registration successful! Redirecting...");
-        setTimeout(() => {
-          router.push("/dashboard");
-        }, 1000);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "An error occurred");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-neutral-900 to-black flex items-center justify-center p-4">
-      <Card className="w-full max-w-md">
-        <div className="p-8">
-          {/* Header */}
-          <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-neutral-100 mb-2">FocusMail</h1>
-            <p className="text-neutral-500">AI-Powered Email Intelligence</p>
+    <div className="min-h-screen bg-gradient-to-br from-neutral-950 via-neutral-900 to-black flex items-center justify-center p-4">
+      <div className="w-full max-w-sm">
+        {/* Logo / Brand */}
+        <div className="text-center mb-10">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-green-900/40 border border-green-800/50 mb-5">
+            <svg className="w-8 h-8 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+            </svg>
           </div>
+          <h1 className="text-3xl font-bold text-neutral-100 tracking-tight">FocusMail</h1>
+          <p className="text-neutral-500 mt-2 text-sm">AI-Powered Email Intelligence</p>
+        </div>
 
-          {/* Mode Tabs */}
-          <div className="flex gap-2 mb-8 bg-neutral-800 p-1 rounded-lg">
-            <button
-              onClick={() => {
-                setMode("login");
-                setError(null);
-                setSuccess(null);
-              }}
-              className={`flex-1 py-2 rounded font-medium transition-all ${
-                mode === "login"
-                  ? "bg-green-900 text-green-200 shadow"
-                  : "text-neutral-500 hover:text-neutral-400"
-              }`}
-            >
-              Login
-            </button>
-            <button
-              onClick={() => {
-                setMode("register");
-                setError(null);
-                setSuccess(null);
-              }}
-              className={`flex-1 py-2 rounded font-medium transition-all ${
-                mode === "register"
-                  ? "bg-green-900 text-green-200 shadow"
-                  : "text-neutral-500 hover:text-neutral-400"
-              }`}
-            >
-              Register
-            </button>
-          </div>
-
-          {/* Messages */}
-          {error && (
-            <div className="mb-4 p-3 bg-neutral-800 border border-neutral-700 rounded text-neutral-300 text-sm">
-              {error}
-            </div>
-          )}
-
-          {success && (
-            <div className="mb-4 p-3 bg-green-950 border border-green-800 rounded text-green-200 text-sm">
-              {success}
-            </div>
-          )}
-
-          {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Name fields for register */}
-            {mode === "register" && (
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-neutral-400 mb-1">
-                    First Name (optional)
-                  </label>
-                  <input
-                    type="text"
-                    name="firstName"
-                    value={formData.firstName}
-                    onChange={handleInputChange}
-                    placeholder="John"
-                    className="w-full px-3 py-2 border border-neutral-700 bg-neutral-900 text-neutral-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-700"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-neutral-400 mb-1">
-                    Last Name (optional)
-                  </label>
-                  <input
-                    type="text"
-                    name="lastName"
-                    value={formData.lastName}
-                    onChange={handleInputChange}
-                    placeholder="Doe"
-                    className="w-full px-3 py-2 border border-neutral-700 bg-neutral-900 text-neutral-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-700"
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* Email field */}
-            <div>
-              <label className="block text-sm font-medium text-neutral-400 mb-1">
-                Email Address
-              </label>
-              <input
-                type="email"
-                name="email"
-                value={formData.email}
-                onChange={handleInputChange}
-                placeholder="you@example.com"
-                className="w-full px-3 py-2 border border-neutral-700 bg-neutral-900 text-neutral-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-700"
-                required
-              />
-            </div>
-
-            {/* Password field */}
-            <div>
-              <label className="block text-sm font-medium text-neutral-400 mb-1">
-                Password
-              </label>
-              <input
-                type="password"
-                name="password"
-                value={formData.password}
-                onChange={handleInputChange}
-                placeholder="••••••••"
-                className="w-full px-3 py-2 border border-neutral-700 bg-neutral-900 text-neutral-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-700"
-                required
-              />
-              {mode === "register" && (
-                <p className="text-xs text-neutral-500 mt-1">
-                  Minimum 6 characters
-                </p>
-              )}
-            </div>
-
-            {/* Confirm password field for register */}
-            {mode === "register" && (
-              <div>
-                <label className="block text-sm font-medium text-neutral-400 mb-1">
-                  Confirm Password
-                </label>
-                <input
-                  type="password"
-                  name="confirmPassword"
-                  value={formData.confirmPassword}
-                  onChange={handleInputChange}
-                  placeholder="••••••••"
-                  className="w-full px-3 py-2 border border-neutral-700 bg-neutral-900 text-neutral-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-700"
-                  required
-                />
-              </div>
-            )}
-
-            {/* Submit Button */}
-            <Button
-              type="submit"
-              disabled={loading}
-              className="w-full mt-6"
-            >
-              {loading
-                ? mode === "login"
-                  ? "Logging in..."
-                  : "Creating account..."
-                : mode === "login"
-                ? "Login"
-                : "Create Account"}
-            </Button>
-          </form>
-
-          <div className="mt-4 flex items-center justify-center gap-3">
-            <span className="h-px flex-1 bg-neutral-700" />
-            <span className="text-xs uppercase tracking-[0.2em] text-neutral-500">
-              or
-            </span>
-            <span className="h-px flex-1 bg-neutral-700" />
-          </div>
-
-          <button
-            type="button"
-            onClick={() => {
-              window.location.href = `${process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000"}/auth/login`;
-            }}
-            className="w-full mt-4 inline-flex items-center justify-center gap-2 rounded-lg border border-neutral-700 bg-neutral-900 px-4 py-3 text-sm font-semibold text-neutral-100 transition hover:border-green-500 hover:text-green-200"
-          >
-            <span>Continue with Google</span>
-          </button>
-
-          {/* Info text */}
-          <p className="text-center text-sm text-neutral-500 mt-6">
-            {mode === "login"
-              ? "Don't have an account? "
-              : "Already have an account? "}
-            <button
-              onClick={() => {
-                setMode(mode === "login" ? "register" : "login");
-                setError(null);
-                setSuccess(null);
-              }}
-              className="text-green-600 hover:underline font-medium"
-            >
-              {mode === "login" ? "Register" : "Login"}
-            </button>
+        {/* Sign-in card */}
+        <div className="rounded-2xl border border-neutral-800 bg-neutral-950/80 backdrop-blur-sm p-8 shadow-2xl shadow-black/40">
+          <p className="text-center text-sm text-neutral-400 mb-6">
+            Sign in to access your intelligent inbox
           </p>
 
-          {/* Features info */}
-          <div className="mt-8 pt-6 border-t border-neutral-700">
-            <p className="text-xs text-neutral-500 text-center mb-3 font-medium">
-              Connect your email accounts:
-            </p>
-            <div className="space-y-2 text-xs text-neutral-400">
-              <div className="flex items-center">
-                <span className="w-2 h-2 bg-green-600 rounded-full mr-2"></span>
-                Gmail
-              </div>
-              <div className="flex items-center">
-                <span className="w-2 h-2 bg-green-600 rounded-full mr-2"></span>
-                Outlook (Coming soon)
-              </div>
-              <div className="flex items-center">
-                <span className="w-2 h-2 bg-green-600 rounded-full mr-2"></span>
-                Other providers (Coming soon)
-              </div>
-            </div>
-          </div>
+          {/* Google Sign-In Button */}
+          <a
+            href={`${apiBase}/auth/login`}
+            className="flex w-full items-center justify-center gap-3 rounded-xl border border-neutral-700 bg-white px-4 py-3 text-sm font-semibold text-neutral-800 shadow-sm transition hover:bg-neutral-100 hover:border-neutral-500 active:scale-[0.98]"
+          >
+            {/* Google "G" logo SVG */}
+            <svg width="20" height="20" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+              <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+              <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+              <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+              <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+              <path fill="none" d="M0 0h48v48H0z"/>
+            </svg>
+            Continue with Google
+          </a>
+
+          <p className="text-center text-xs text-neutral-600 mt-5 leading-relaxed">
+            By signing in you grant FocusMail permission to<br/>read and analyse your Gmail messages.
+          </p>
         </div>
-      </Card>
+
+        {/* Features strip */}
+        <div className="mt-8 grid grid-cols-3 gap-3 text-center">
+          {[
+            { icon: "🧠", label: "AI Classification" },
+            { icon: "📅", label: "Event Extraction" },
+            { icon: "💬", label: "Smart Chat" },
+          ].map(({ icon, label }) => (
+            <div key={label} className="rounded-xl border border-neutral-800/60 bg-neutral-900/40 px-3 py-3">
+              <div className="text-xl mb-1">{icon}</div>
+              <p className="text-[11px] text-neutral-500 leading-tight">{label}</p>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

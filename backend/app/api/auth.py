@@ -6,7 +6,7 @@ import secrets
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, status, Header, Request
 from fastapi.responses import RedirectResponse
@@ -20,22 +20,32 @@ from jose import JWTError, jwt
 from app.database.db import get_db
 from app.database.models import User, UserEmail
 
+# ---------------------------------------------------------------------------
+# Configuration — all read from environment variables.
+# Local dev: set these in backend/.env
+# Production: set these in Railway / Render dashboard
+# ---------------------------------------------------------------------------
 CREDENTIALS_PATH = Path(__file__).resolve().parents[2] / "credentials.json"
+
 GOOGLE_SCOPES = [
     "openid",
     "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/userinfo.profile",
     "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.send",
 ]
-GOOGLE_REDIRECT_URI = "http://localhost:8000/auth/callback"
 
-# Allow insecure local OAuth redirect during development
-os.environ.setdefault("OAUTHLIB_INSECURE_TRANSPORT", "1")
+# In production set GOOGLE_REDIRECT_URI=https://your-railway-url/auth/callback
+GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/callback")
 
-# Configuration
-SECRET_KEY = "your-secret-key-change-in-production"
+# In production set FRONTEND_URL=https://your-vercel-url
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+
+# In production set SECRET_KEY to a long random string — never use the default!
+SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key-change-in-production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
+
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -226,7 +236,7 @@ def login(login_data: UserLogin, db: Session = Depends(get_db)):
 @router.get("/me", response_model=UserResponse)
 def get_me(current_user: User = Depends(get_current_user)):
     """Get current user info"""
-    return UserResponse.from_orm(current_user)
+    return UserResponse.model_validate(current_user)
 
 
 @router.post("/logout")
@@ -254,8 +264,28 @@ google_router = APIRouter()
 # In-memory store for state/code_verifier mapping during local dev
 _google_oauth_state_store: Dict[str, str] = {}
 
+# Allow insecure (http) OAuth redirect — only needed for local development.
+# In production the redirect URI is https so this must NOT be set.
+if os.getenv("GOOGLE_REDIRECT_URI", "").startswith("http://") or not os.getenv("GOOGLE_REDIRECT_URI"):
+    os.environ.setdefault("OAUTHLIB_INSECURE_TRANSPORT", "1")
 
-def _generate_pkce_pair() -> tuple[str, str]:
+
+def _load_client_config() -> dict:
+    """
+    Load Google OAuth client config.
+
+    Production: reads the GOOGLE_CREDENTIALS_JSON environment variable
+                (set it to the full contents of credentials.json).
+    Local dev:  falls back to the credentials.json file on disk.
+    """
+    raw = os.getenv("GOOGLE_CREDENTIALS_JSON")
+    if raw:
+        return json.loads(raw)
+    with open(str(CREDENTIALS_PATH), "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _generate_pkce_pair() -> Tuple[str, str]:
     """Generate a PKCE (code_verifier, code_challenge) pair using S256 method."""
     # code_verifier: 32 random bytes, base64url-encoded (no padding)
     code_verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode()
@@ -267,8 +297,8 @@ def _generate_pkce_pair() -> tuple[str, str]:
 
 def _create_base_flow(state: Optional[str] = None) -> Flow:
     """Create a bare Google OAuth Flow (no PKCE auto-generation)."""
-    return Flow.from_client_secrets_file(
-        str(CREDENTIALS_PATH),
+    return Flow.from_client_config(
+        _load_client_config(),
         scopes=GOOGLE_SCOPES,
         redirect_uri=GOOGLE_REDIRECT_URI,
         state=state,
@@ -301,8 +331,7 @@ def google_callback(request: Request, db: Session = Depends(get_db)):
     # Check if Google returned an error (e.g. user denied permission)
     error = request.query_params.get("error")
     if error:
-        frontend_error = f"http://localhost:3000/auth?error={error}"
-        return RedirectResponse(frontend_error)
+        return RedirectResponse(f"{FRONTEND_URL}/auth?error={error}")
 
     state = request.query_params.get("state")
     if not state:
@@ -396,6 +425,6 @@ def google_callback(request: Request, db: Session = Depends(get_db)):
         expires_delta=access_token_expires,
     )
 
-    frontend_redirect = f"http://localhost:3000/auth/google/callback?token={access_token}"
+    frontend_redirect = f"{FRONTEND_URL}/auth/google/callback?token={access_token}"
     return RedirectResponse(frontend_redirect)
 

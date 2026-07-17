@@ -1,4 +1,5 @@
 import logging
+import os
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -47,12 +48,15 @@ app = FastAPI(title="Email Intelligence Assistant")
 # CORS — must be added BEFORE the exception handler so the headers are present
 # on error responses too.
 # ---------------------------------------------------------------------------
-ALLOWED_ORIGINS = [
+_PRODUCTION_FRONTEND = os.getenv("FRONTEND_URL", "")
+
+ALLOWED_ORIGINS = list(filter(None, [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:8000",
     "http://127.0.0.1:8000",
-]
+    _PRODUCTION_FRONTEND,   # e.g. https://focusmail.vercel.app in production
+]))
 
 app.add_middleware(
     CORSMiddleware,
