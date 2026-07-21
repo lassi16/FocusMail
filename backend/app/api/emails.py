@@ -1,3 +1,5 @@
+import hashlib
+import json
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -7,6 +9,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.database.db import get_db
 from app.database.models import Email, EmailEvent
+from app.services.redis_client import get_redis, stats_key, emails_key
 
 router = APIRouter()
 
@@ -52,6 +55,36 @@ def get_emails(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
+    """
+    Redis cache: filtered email lists are cached for 60 seconds.
+
+    How the cache key is built:
+      MD5( sorted(categories) + sorted(priorities) + search + limit + offset )
+    So "Internship + High priority" always maps to the same key regardless
+    of the order the filters were selected.
+
+    Search queries (free text) are NOT cached — they change too frequently
+    and returning stale search results would be confusing.
+    """
+    EMAILS_CACHE_TTL = 60
+
+    # Build a deterministic cache key from all filter params
+    # Skip caching when there's a search term (too dynamic)
+    r = get_redis()
+    cache_key = None
+    if r and not search:
+        filter_str = (
+            "|".join(sorted(category or []))
+            + ":" + "|".join(sorted(priority or []))
+            + ":" + str(limit)
+            + ":" + str(offset)
+        )
+        cache_key = emails_key(hashlib.md5(filter_str.encode()).hexdigest())
+        cached = r.get(cache_key)
+        if cached:
+            return json.loads(cached)
+
+    # Cache miss (or search query) — hit the database
     query = db.query(Email).options(joinedload(Email.events))
 
     if category:
@@ -80,12 +113,21 @@ def get_emails(
         .all()
     )
 
-    return {
+    result = {
         "total": total,
         "limit": limit,
         "offset": offset,
         "emails": [serialize_email(email) for email in emails],
     }
+
+    # Store in Redis (only for non-search filter queries)
+    if r and cache_key:
+        try:
+            r.setex(cache_key, EMAILS_CACHE_TTL, json.dumps(result))
+        except Exception:
+            pass
+
+    return result
 
 
 @router.get("/emails/{email_id}")
@@ -143,6 +185,23 @@ def get_events(
 
 @router.get("/stats")
 def get_stats(db: Session = Depends(get_db)):
+    # ---- Redis cache check ----
+    # Stats are expensive (multiple GROUP BY queries on Neon).
+    # Cache the full response for 60 seconds to avoid hammering the DB
+    # every time the dashboard page loads or auto-refreshes.
+    CACHE_KEY = stats_key(0)          # global stats (not per-user)
+    CACHE_TTL = 60                    # seconds
+
+    r = get_redis()
+    if r:
+        cached = r.get(CACHE_KEY)
+        if cached:
+            return json.loads(cached)
+    # ---- /cache check ----
+
+    today = datetime.utcnow().date()
+    week_end = today + timedelta(days=7)
+
     total_emails = db.query(func.count(Email.id)).scalar() or 0
 
     category_rows = (
@@ -156,9 +215,6 @@ def get_stats(db: Session = Depends(get_db)):
         .group_by(Email.priority)
         .all()
     )
-
-    today = datetime.utcnow().date()
-    week_end = today + timedelta(days=7)
 
     upcoming_events = (
         db.query(EmailEvent)
@@ -191,7 +247,7 @@ def get_stats(db: Session = Depends(get_db)):
         .all()
     )
 
-    return {
+    result = {
         "total_emails": total_emails,
         "internship_count": sum(
             count for category, count in category_rows if category and "intern" in category.lower()
@@ -221,6 +277,16 @@ def get_stats(db: Session = Depends(get_db)):
         "upcoming_events": [serialize_event(event) for event in upcoming_events],
         "recent_important_emails": [serialize_email(email) for email in recent_important],
     }
+
+    # Store in Redis cache for next request
+    if r:
+        try:
+            r.setex(CACHE_KEY, CACHE_TTL, json.dumps(result))
+        except Exception:
+            pass  # Never let cache failures break the response
+
+    return result
+
 
 
 @router.post("/emails/test")

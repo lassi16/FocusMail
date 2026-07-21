@@ -1,8 +1,10 @@
+import hashlib
 import json
 import re
 import logging
 
 from app.services.llm.groq_client import client
+from app.services.redis_client import get_redis, classify_key
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +53,20 @@ def _extract_json(text: str) -> dict:
 
 
 def classify_email(subject: str, body: str) -> dict:
+    # ------------------------------------------------------------------
+    # Redis cache — identical emails are never sent to the LLM twice.
+    # Key = MD5 of subject + first 500 chars of body (enough to be unique).
+    # TTL = 30 days (classification of a given email doesn't change).
+    # ------------------------------------------------------------------
+    content_hash = hashlib.md5(f"{subject}:{body[:500]}".encode()).hexdigest()
+    cache_key = classify_key(content_hash)
+    r = get_redis()
+    if r:
+        cached = r.get(cache_key)
+        if cached:
+            logger.debug("Classification cache HIT for subject=%r", subject)
+            return json.loads(cached)
+
     system_message = (
         "You are an email classification assistant. "
         "You MUST respond with ONLY a raw JSON object — no markdown, no code fences, no explanation. "
@@ -112,4 +128,14 @@ Respond with ONLY this JSON, no other text:
     category = next((c for c in VALID_CATEGORIES if c.lower() == category.lower()), "Personal")
     priority = next((p for p in VALID_PRIORITIES if p.lower() == priority.lower()), "Medium")
 
-    return {"category": category, "priority": priority}
+    result = {"category": category, "priority": priority}
+
+    # Store in Redis for 30 days
+    if r:
+        try:
+            r.setex(cache_key, 60 * 60 * 24 * 30, json.dumps(result))
+        except Exception:
+            pass
+
+    return result
+

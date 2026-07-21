@@ -19,6 +19,11 @@ from jose import JWTError, jwt
 
 from app.database.db import get_db
 from app.database.models import User, UserEmail
+from app.services.redis_client import (
+    get_redis,
+    pkce_key,
+    blocklist_key,
+)
 
 # ---------------------------------------------------------------------------
 # Configuration — all read from environment variables.
@@ -149,6 +154,14 @@ def get_current_user(
             detail="Invalid token",
         )
 
+    # Check JWT revocation blocklist in Redis
+    r = get_redis()
+    if r and r.get(blocklist_key(token)):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has been revoked. Please log in again.",
+        )
+
     user = db.query(User).filter(User.email == token_data.email).first()
     if user is None:
         raise HTTPException(
@@ -240,8 +253,23 @@ def get_me(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/logout")
-def logout():
-    """Logout user (handled on client side)"""
+def logout(authorization: Optional[str] = Header(None)):
+    """
+    Logout: add the current JWT to the Redis revocation blocklist.
+    The token will be rejected by get_current_user until it naturally expires.
+    Falls back to a no-op (client-side logout) if Redis is unavailable.
+    """
+    if authorization:
+        try:
+            parts = authorization.split()
+            if len(parts) == 2 and parts[0].lower() == "bearer":
+                token = parts[1]
+                r = get_redis()
+                if r:
+                    # TTL matches the token's maximum lifetime (7 days)
+                    r.setex(blocklist_key(token), ACCESS_TOKEN_EXPIRE_MINUTES * 60, "revoked")
+        except Exception:
+            pass  # Never block logout even if Redis fails
     return {"message": "Logged out successfully"}
 
 
@@ -319,8 +347,12 @@ def google_login():
         code_challenge_method="S256",
     )
 
-    # Store verifier keyed by state so the callback can retrieve it
-    _google_oauth_state_store[state] = code_verifier
+    # Store verifier keyed by state — Redis primary, in-memory dict as fallback
+    r = get_redis()
+    if r:
+        r.setex(pkce_key(state), 600, code_verifier)  # 10-minute TTL
+    else:
+        _google_oauth_state_store[state] = code_verifier
 
     return RedirectResponse(authorization_url)
 
@@ -340,7 +372,13 @@ def google_callback(request: Request, db: Session = Depends(get_db)):
             detail="OAuth state is missing.",
         )
 
-    code_verifier = _google_oauth_state_store.pop(state, None)
+    # Retrieve verifier — Redis primary (getdel = atomic read+delete), dict fallback
+    r = get_redis()
+    if r:
+        code_verifier = r.getdel(pkce_key(state))
+    else:
+        code_verifier = _google_oauth_state_store.pop(state, None)
+
     if not code_verifier:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
