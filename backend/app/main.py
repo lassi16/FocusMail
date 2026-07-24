@@ -1,5 +1,7 @@
 import logging
 import os
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -13,6 +15,7 @@ from .api.gmail import router as gmail_router
 from .api.agents import router as agent_router
 from .api.router import router as router_api
 from .api.auth import router as auth_router, google_router
+from .services.scheduler import start_scheduler, stop_scheduler
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +45,20 @@ def run_startup_migrations() -> None:
 run_startup_migrations()
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Email Intelligence Assistant")
+
+# ---------------------------------------------------------------------------
+# Lifespan — replaces deprecated @app.on_event("startup"/"shutdown")
+# Starts the background email sync scheduler when FastAPI boots,
+# and shuts it down cleanly when the server stops.
+# ---------------------------------------------------------------------------
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    start_scheduler()   # <-- background sync begins here
+    yield
+    stop_scheduler()    # <-- clean shutdown when server exits
+
+
+app = FastAPI(title="Email Intelligence Assistant", lifespan=lifespan)
 
 # ---------------------------------------------------------------------------
 # CORS — must be added BEFORE the exception handler so the headers are present
@@ -97,4 +113,4 @@ app.include_router(google_router)
 
 @app.get("/")
 def root():
-    return {"message": "Email Intelligence Assistant Backend Running"}
+    return {"message": "Email Intelligence Assistant Backend Running"}

@@ -1,0 +1,24 @@
+# Render service configuration template.
+# Replace <OWNER> with your GitHub username/org or set the image to a registry you prefer.
+
+services:
+  - type: web
+    name: email-intel-backend
+    env: docker
+    # image: ghcr.io/<OWNER>/email-intel-backend:latest
+    # Alternatively configure Render to build from the repository Dockerfile.
+    plan: starter
+    envVars:
+      - key: DATABASE_URL
+      - key: REDIS_URL
+      - key: GROQ_API_KEY
+      - key: GMAIL_CLIENT_ID
+      - key: GMAIL_CLIENT_SECRET
+
+  - type: worker
+    name: email-intel-worker
+    env: docker
+    plan: starter
+    envVars:
+      - key: DATABASE_URL
+      - key: REDIS_URL
